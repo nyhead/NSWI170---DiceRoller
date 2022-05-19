@@ -71,7 +71,7 @@ class Display {
   public:
     void set_val(char s[]) {
       for (int i = 0; i < positionsCount; i++) {
-        if (s[i] == '\0' ) break;
+        // if (s[i] == '\0' ) break;
         disp_chars[i] = s[i];
       }
     }
@@ -92,7 +92,13 @@ struct Dice {
   int types[diceCount] = { 4, 6, 8, 10, 12, 20, 100 };
   int typeId;
   int genNum;
+  const char *genMsg = "AAAA";
 
+  void updateGenMsg() {
+    char l = *genMsg;
+    l = (l + 1) % 26;
+    // sprintf(genMsg, "")
+  }
   void updateThrows() {
     throws++;
     if (throws == throwLimit) throws = 1;
@@ -124,6 +130,8 @@ struct Button {
   int pin;
   bool down;
   long when_pressed;
+  enum State {Holding, Release, Nothing};
+  State state = Nothing;
 };
 
 constexpr int buttonsCount = 3;
@@ -136,7 +144,7 @@ void init_button(Button &button, int pin) {
   button.down = false;
   pinMode(button.pin, INPUT);
 }
-
+int genMsgCounter = 0;
 void updateDiceDisplay(Dice &dice, Display &display) {
   char out[5];
   if (dice.state == dice.Configuration) {
@@ -148,7 +156,7 @@ void updateDiceDisplay(Dice &dice, Display &display) {
     }
   }
   else if (dice.state == dice.Generating) {
-      sprintf(out, "XXXX");
+        sprintf(out, "%lu", millis());
   }
   else {
     sprintf(out, "%d   ", dice.getGenNum());
@@ -160,6 +168,7 @@ bool is_pressed(Button &button) {
 
   if (digitalRead(button.pin) == OFF) {
     button.down = false;
+    button.state = button.Nothing;
     return false;
   }
 
@@ -168,21 +177,25 @@ bool is_pressed(Button &button) {
     if (now - button.when_pressed <= 0) {
       return false;
     }
+      Serial.println("Holding");
+      button.state = button.Holding;
     button.when_pressed += 300;
   }
   else {
     button.down = true;
     button.when_pressed = now + 1000;
+  Serial.println("Release");
+  button.state = button.Release;
   }
   return true;
 }
 
 void actButton(Button &button, Dice &dice) {
-  bool pr = false;
+ 
   if (is_pressed(button)) {
     switch (button.pin) {
       case button1_pin:
-        dice.state = dice.Generating;
+        dice.state = dice.Normal;
         break;
       case button2_pin:
         dice.updateThrows();
@@ -193,16 +206,20 @@ void actButton(Button &button, Dice &dice) {
         dice.state = dice.Configuration;
         break;
     }
-    pr = true;
   }
+  
 
-  if (dice.state == dice.Normal && pr && button.pin == button1_pin) {
+  if (button.state == button.Holding && button.pin == button1_pin) {
+    dice.state = dice.Generating;
+  }
+  else if (button.state == button.Nothing && dice.state == dice.Generating && button.pin == button1_pin) {
     dice.setGenNum(button.when_pressed);
+    dice.state = dice.Normal;
   }
 }
 
 void setup() {
-  //Serial.begin(9600);
+  Serial.begin(9600);
   int b_pins[] = {button1_pin, button2_pin, button3_pin};
   for (int i = 0; i < buttonsCount; i++) {
     init_button(buttons[i], b_pins[i]);
@@ -223,8 +240,8 @@ unsigned long last;
 void loop() {
   for (int i = 0; i < 3; i++) {
     actButton(buttons[i], dice);
-    updateDiceDisplay(dice, display);
   }
+  updateDiceDisplay(dice, display);
 
   display.show();
 }
