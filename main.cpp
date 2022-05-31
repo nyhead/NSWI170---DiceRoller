@@ -69,11 +69,21 @@ class Display {
       return disp_chars[pos];
     }
   public:
-    void set_val(char s[]) {
-      for (int i = 0; i < positionsCount; i++) {
-        // if (s[i] == '\0' ) break;
-        disp_chars[i] = s[i];
+    void set_val(int num) {
+      for (int i = positionsCount - 1; i >= 0; i--) {
+        disp_chars[i] = '0' + num % 10;
+        num /= 10;
       }
+    }
+    void set_val(int num1, int num2) {
+      int i = positionsCount - 1;
+      while (i > positionsCount - 3) {
+        disp_chars[i] = '0' + num2 % 10;
+        num2 /= 10;
+        i--;
+      }
+      disp_chars[i] = 'd';
+      disp_chars[--i] = '0' + num1;
     }
 
     void show() {
@@ -86,19 +96,13 @@ constexpr int diceCount = 7;
 struct Dice {
   enum States { Normal, Configuration, Generating };
   States state;
-  int throws;
+  int throws = 1;
   int throwLimit = 10;
   unsigned long time;
   int types[diceCount] = { 4, 6, 8, 10, 12, 20, 100 };
   int typeId;
   int genNum;
-  const char *genMsg = "AAAA";
 
-  void updateGenMsg() {
-    char l = *genMsg;
-    l = (l + 1) % 26;
-    // sprintf(genMsg, "")
-  }
   void updateThrows() {
     throws++;
     if (throws == throwLimit) throws = 1;
@@ -115,12 +119,15 @@ struct Dice {
   int getGenNum() {
     return genNum;
   }
+  int getThrows() {
+    return throws;
+  }
 
   void setGenNum(long time) {
     int total = 0;
     srand(time);
     for (int i = 0;  i < throws; i++) {
-      total += (rand() % types[typeId]) + 1;
+      total += rand() % types[typeId] + 1;
     }
     genNum = total;
   }
@@ -146,22 +153,17 @@ void init_button(Button &button, int pin) {
 }
 int genMsgCounter = 0;
 void updateDiceDisplay(Dice &dice, Display &display) {
-  char out[5];
-  if (dice.state == dice.Configuration) {
-    if (dice.getType() == 100) {
-      sprintf(out, "%dd00", dice.throws);
-    }
-    else {
-      sprintf(out, "%dd%d", dice.throws, dice.getType());
-    }
+  switch (dice.state) {
+    case dice.Configuration:
+      display.set_val(dice.getThrows(), dice.getType());
+      break;
+    case dice.Normal:
+      display.set_val(dice.getGenNum());
+      break;
+    default:
+      display.set_val(millis() % 10000);
+      break;
   }
-  else if (dice.state == dice.Generating) {
-        sprintf(out, "%lu", millis());
-  }
-  else {
-    sprintf(out, "%d   ", dice.getGenNum());
-  }
-  display.set_val(out);
 }
 
 bool is_pressed(Button &button) {
@@ -177,21 +179,19 @@ bool is_pressed(Button &button) {
     if (now - button.when_pressed <= 0) {
       return false;
     }
-      Serial.println("Holding");
-      button.state = button.Holding;
+    button.state = button.Holding;
     button.when_pressed += 300;
   }
   else {
     button.down = true;
     button.when_pressed = now + 1000;
-  Serial.println("Release");
   button.state = button.Release;
   }
   return true;
 }
 
 void actButton(Button &button, Dice &dice) {
- 
+  
   if (is_pressed(button)) {
     switch (button.pin) {
       case button1_pin:
@@ -210,9 +210,13 @@ void actButton(Button &button, Dice &dice) {
   
 
   if (button.state == button.Holding && button.pin == button1_pin) {
+    dice.setGenNum(button.when_pressed);
     dice.state = dice.Generating;
   }
-  else if (button.state == button.Nothing && dice.state == dice.Generating && button.pin == button1_pin) {
+  if (button.state == button.Nothing && dice.state == dice.Generating && button.pin == button1_pin) {
+    dice.state = dice.Normal;
+  }
+  if (button.state == button.Release && button.pin == button1_pin) {
     dice.setGenNum(button.when_pressed);
     dice.state = dice.Normal;
   }
@@ -232,16 +236,25 @@ void setup() {
   digitalWrite(latch_pin, OFF);
   digitalWrite(latch_pin, ON);
 
-  dice.state = dice.Normal;
+  dice.state = dice.Configuration;
   updateDiceDisplay(dice, display);
 }
-
-unsigned long last;
+unsigned long int prev = 0;
+int i = 1, j = 4;
 void loop() {
   for (int i = 0; i < 3; i++) {
     actButton(buttons[i], dice);
+    updateDiceDisplay(dice, display);
   }
-  updateDiceDisplay(dice, display);
 
   display.show();
+
+  // unsigned long int now = millis();
+  // if (now - prev >= 500) {
+  //   display.set_val(i % 9, j % 101);
+  //   i++;
+  //   // j++;
+  //   prev = now;
+  // }
+  // display.show();
 }
